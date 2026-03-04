@@ -1,0 +1,131 @@
+import random
+import re
+from datetime import datetime
+from flask import Flask, request, Response
+
+app = Flask(__name__)
+
+class CCGenerator:
+    def __init__(self):
+        self.current_year = datetime.now().year
+        
+    def luhn_check(self, card_number):
+        sum = 0
+        alternate = False
+        for i in range(len(card_number) - 1, -1, -1):
+            digit = int(card_number[i])
+            if alternate:
+                digit *= 2
+                if digit > 9:
+                    digit -= 9
+            sum += digit
+            alternate = not alternate
+        return sum % 10 == 0
+    
+    def generate_card_number(self, bin_number, length):
+        number = re.sub(r'\D', '', bin_number)
+        while len(number) < length - 1:
+            number += str(random.randint(0, 9))
+        
+        sum = 0
+        alternate = True
+        for i in range(len(number) - 1, -1, -1):
+            digit = int(number[i])
+            if alternate:
+                digit *= 2
+                if digit > 9:
+                    digit -= 9
+            sum += digit
+            alternate = not alternate
+        
+        check_digit = (10 - (sum % 10)) % 10
+        return number + str(check_digit)
+    
+    def generate_month(self):
+        months = ['01', '02', '03', '04', '05', '06', 
+                  '07', '08', '09', '10', '11', '12']
+        return random.choice(months)
+    
+    def generate_year(self):
+        years = [str(self.current_year + i) for i in range(1, 9)]
+        return random.choice(years)
+    
+    def generate_cvv(self, length):
+        cvv = ''
+        for _ in range(length):
+            cvv += str(random.randint(0, 9))
+        return cvv
+    
+    def generate_single_card(self, bin_number):
+        card_length = 16
+        cvv_length = 3
+        if bin_number and bin_number[0] == '3':
+            card_length = 15
+            cvv_length = 4
+        
+        while True:
+            card_number = self.generate_card_number(bin_number, card_length)
+            if self.luhn_check(card_number):
+                break
+        
+        exp_month = self.generate_month()
+        exp_year = self.generate_year()
+        gen_cvv = self.generate_cvv(cvv_length)
+        
+        return f"{card_number}|{exp_month}|{exp_year}|{gen_cvv}"
+
+
+generator = CCGenerator()
+
+@app.route('/bin/<bin_number>/<int:quantity>', methods=['GET'])
+def generate_cards(bin_number, quantity):
+    """
+    SIMPLE API - exactly as you requested
+    URL: /bin/559888/10
+    Output: One card per line: 5598881234567890|08|2027|123
+    """
+    try:
+        # Clean BIN
+        bin_number = re.sub(r'\D', '', bin_number)
+        
+        if not bin_number or len(bin_number) < 6:
+            return "Error: Invalid BIN (min 6 digits)", 400
+        
+        if quantity < 1 or quantity > 100:
+            return "Error: Quantity must be 1-100", 400
+        
+        # Generate cards - SIMPLE text output
+        cards = []
+        for _ in range(quantity):
+            cards.append(generator.generate_single_card(bin_number))
+        
+        # Return as plain text, one card per line
+        return Response("\n".join(cards), mimetype='text/plain')
+    
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    return "OK", 200
+
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print("SIMPLE BIN API - NO UI, NO JSON")
+    print("=" * 50)
+    print("\n🚀 Server: http://localhost:5000")
+    print("\n📌 ENDPOINT:")
+    print("   GET /bin/{BIN}/{QUANTITY}")
+    print("\n💡 EXAMPLES:")
+    print("   http://localhost:5000/bin/559888/5")
+    print("   http://localhost:5000/bin/453201/10")
+    print("   http://localhost:5000/bin/371234/3")
+    print("\n📤 OUTPUT FORMAT:")
+    print("   5598881234567890|08|2027|123")
+    print("   5598889876543210|03|2028|456")
+    print("\n⏸️  CTRL+C to stop")
+    print("=" * 50)
+    
+    app.run(debug=True, host='0.0.0.0', port=5000)
